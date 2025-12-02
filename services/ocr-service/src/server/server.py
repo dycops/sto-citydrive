@@ -1,10 +1,13 @@
+import logging
+import sys
+import os
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 import grpc
 import time
-import logging
 import signal
-import sys
 from concurrent import futures
-from pathlib import Path
 
 from paddleocr import PaddleOCR
 import json
@@ -12,33 +15,45 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent / "generated"))  # ← Добавьте эту строку
+sys.path.insert(0, str(Path(__file__).parent.parent / "generated"))
 
 from generated import ocr_pb2 as pb
 from generated import ocr_pb2_grpc as pb_grpc
 
 
-# -----------------------------
-# ЛОГГИРОВАНИЕ
-# -----------------------------
+DEVICE = os.getenv("OCR_DEVICE", "gpu").lower()
+
+Path("logs").mkdir(exist_ok=True)
+
+file_handler = RotatingFileHandler(
+    "logs/ocr_service.log",
+    maxBytes=10 * 1024 * 1024,
+    backupCount=5,
+    encoding="utf-8"
+)
+
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+file_handler.setFormatter(formatter)
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        file_handler
+    ]
 )
+
 logger = logging.getLogger("ocr-grpc")
 
 
-# -----------------------------
-# gRPC СЕРВИС
-# -----------------------------
 class OCRService(pb_grpc.OCRServiceServicer):
     def __init__(self):
-        logger.info("Initializing PaddleOCR...")
+        logger.info(f"Initializing PaddleOCR with device: {DEVICE}")
 
         try:
             self.ocr = PaddleOCR(
                 lang="ru",
-                device="gpu",
+                device=DEVICE,
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
@@ -54,12 +69,8 @@ class OCRService(pb_grpc.OCRServiceServicer):
             logger.exception("Failed to initialize OCR:")
             raise e
 
-    # -----------------------------
-    # ОБРАБОТКА RPC
-    # -----------------------------
     def Recognize(self, request, context):
         try:
-            # Валидация
             if not request.image:
                 context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
                 context.set_details("Image field cannot be empty")
@@ -69,7 +80,6 @@ class OCRService(pb_grpc.OCRServiceServicer):
                     error="Empty image"
                 )
 
-            # Декодирование
             nparr = np.frombuffer(request.image, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
@@ -82,7 +92,6 @@ class OCRService(pb_grpc.OCRServiceServicer):
                     error="Unable to decode image"
                 )
 
-            # OCR обработка
             results = self.ocr.predict(img)
             outputs = [r.json for r in results]
 
@@ -99,7 +108,6 @@ class OCRService(pb_grpc.OCRServiceServicer):
             return pb.OCRResponse(success=False, json="", error=str(e))
 
 
-# Global server reference for graceful shutdown
 _server = None
 
 
@@ -126,11 +134,10 @@ def serve():
 
     def shutdown_handler(signum, frame):
         logger.info(f"Received signal {signum}. Starting graceful shutdown...")
-        _server.stop(grace=5)  # Даём серверу 5 секунд на завершение
+        _server.stop(grace=5)
         logger.info("Server stopped gracefully.")
         sys.exit(0)
 
-    # Обработка сигналов для Docker
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
 

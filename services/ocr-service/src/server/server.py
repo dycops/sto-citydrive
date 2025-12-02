@@ -45,6 +45,9 @@ logging.basicConfig(
 
 logger = logging.getLogger("ocr-grpc")
 
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("paddleocr").setLevel(logging.INFO)
 
 class OCRService(pb_grpc.OCRServiceServicer):
     def __init__(self):

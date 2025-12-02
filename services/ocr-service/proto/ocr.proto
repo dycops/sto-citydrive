@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+service OCRService {
+  rpc Recognize (OCRRequest) returns (OCRResponse);
+}
+
+message OCRRequest {
+  bytes image = 1;
+}
+
+message OCRResponse {
+  bool success = 1;
+  string json = 2;
+  string error = 3;
+}

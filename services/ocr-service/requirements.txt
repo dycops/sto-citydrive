@@ -1,0 +1,7 @@
+paddleocr==3.3.2
+opencv-python
+python-multipart
+pillow
+grpcio
+grpcio-tools
+numpy

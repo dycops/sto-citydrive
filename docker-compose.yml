@@ -1,0 +1,21 @@
+services:
+  ocr-service:
+    build:
+      context: ./services/ocr-service
+      args:
+        - DEVICE=gpu 
+    container_name: ocr-service
+    ports:
+      - "50051:50051"
+    environment:
+      - OCR_DEVICE=gpu
+    volumes:
+      - ./services/ocr-service/logs:/app/logs
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

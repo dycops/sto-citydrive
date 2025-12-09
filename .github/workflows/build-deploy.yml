@@ -1,78 +1,44 @@
-name: Build and Deploy OCR Service
+name: Build and Deploy with Docker Compose
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
       - 'services/ocr-service/**'
-      - '.github/workflows/build-deploy.yml'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
-    runs-on: self-hosted
-    
+  deploy:
+    runs-on: [self-hosted, gpu]
     strategy:
       matrix:
-        device: [cpu]
+        device: [gpu] # [gpu, cpu]
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
       
-      - name: Build Docker image (${{ matrix.device }})
-        run: |
-          docker build \
-            --build-arg DEVICE=${{ matrix.device }} \
-            -t ocr-service:${{ matrix.device }}-${{ github.sha }} \
-            -t ocr-service:${{ matrix.device }}-latest \
-            -f services/ocr-service/Dockerfile \
-            services/ocr-service
-      
-      - name: Stop old container (${{ matrix.device }})
-        run: |
-          docker stop ocr-service-${{ matrix.device }} || true
-          docker rm ocr-service-${{ matrix.device }} || true
-        continue-on-error: true
-      
-      - name: Run new container (${{ matrix.device }})
-        run: |
-          if [ "${{ matrix.device }}" == "gpu" ]; then
-            docker run -d \
-              --gpus all \
-              -p 50051:50051 \
-              --name ocr-service-${{ matrix.device }} \
-              --restart unless-stopped \
-              -v $(pwd)/services/ocr-service/logs:/app/logs \
-              ocr-service:${{ matrix.device }}-latest
-          else
-            docker run -d \
-              -p 50052:50051 \
-              --name ocr-service-${{ matrix.device }} \
-              --restart unless-stopped \
-              -v $(pwd)/services/ocr-service/logs:/app/logs \
-              ocr-service:${{ matrix.device }}-latest
-          fi
-      
-      - name: Wait for service to start
-        run: sleep 10
-      
-      - name: Check container health
-        run: |
-          docker logs ocr-service-${{ matrix.device }} | tail -20
-          docker ps | grep ocr-service-${{ matrix.device }}
-      
-      - name: Cleanup old images
-        run: |
-          docker image prune -f --filter "until=72h"
-        continue-on-error: true
-
-  notify:
-    runs-on: self-hosted
-    needs: build-and-deploy
-    if: always()
-    steps:
-      - name: Deployment status
-        run: |
-          echo "Deployment completed with status: ${{ needs.build-and-deploy.result }}"
-          docker ps | grep ocr-service || echo "No services running"
+    - name: Stop existing services
+      run: |
+        docker compose down || true
+        
+    - name: Build and deploy ${{ matrix.device }}
+      env:
+        DEVICE: ${{ matrix.device }}
+      run: |
+        docker compose build ocr-service
+        docker compose up -d ocr-service
+        
+    - name: Check health
+      run: |
+        sleep 20
+        docker compose ps
+        docker compose logs ocr-service --tail=20
+        
+    - name: Save logs
+      if: always()
+      run: |
+        mkdir -p logs
+        docker compose logs ocr-service > logs/ocr-${{ matrix.device }}.log || true

@@ -10,7 +10,7 @@ services:
     environment:
       - OCR_DEVICE=gpu
     volumes:
-      - ./services/ocr-service/logs:/app/logs
+      - ocr-logs:/app/logs
     restart: unless-stopped
     deploy:
       resources:
@@ -19,3 +19,5 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+volumes:
+  ocr-logs:

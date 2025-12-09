@@ -36,9 +36,3 @@ jobs:
         sleep 20
         docker compose ps
         docker compose logs ocr-service --tail=20
-        
-    - name: Save logs
-      if: always()
-      run: |
-        mkdir -p logs
-        docker compose logs ocr-service > logs/ocr-${{ matrix.device }}.log || true
